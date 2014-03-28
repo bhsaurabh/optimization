@@ -4,6 +4,62 @@
 from collections import namedtuple
 Item = namedtuple("Item", ['index', 'value', 'weight'])
 
+def explore_tree(node, itemNumber, estimation, direction, errors, items, capacity, maxEst=None, maxNodes = []):
+    '''
+        Recursive method to explore tree nodes
+        node = list that stores path taken
+        itemNumber = item to be decided upon
+        estimation = relaxed value
+        direction = direction to take
+        errors = errors to be allowed for
+        items: the list of all items
+        capacity = current capacity of knapsack
+        maxEst: max estimation known
+        maxNodes = Known configuration to output max value
+    '''
+    newNode = node[:]
+    newEstimation = estimation
+    newCapacity = capacity
+    # Step 1: Explore based on direction. (If left, reject item)
+    if direction == 'l':
+        # reject the itemNumber
+        newNode[itemNumber] = 0
+        newEstimation -= items[itemNumber].value
+    elif direction == 'r':
+        # check if this is under our capacity
+        if items[itemNumber].weight <= capacity:
+            newNode[itemNumber] = 1
+            newCapacity -= items[itemNumber].weight
+
+    # Step 2: If this new node is a leaf node, return the value
+    if itemNumber == len(items)-1:
+        return newEstimation, newNode
+
+    # Step 3: If previous max estimation is less than the current estimation...dont explore
+    if maxEst is not None:
+        if maxEst > newEstimation:
+            return 0, []
+
+    # Step 3: Recurse and move left, keeping track of estimation(s)
+    maxEst2, maxNodes2 = explore_tree(newNode, itemNumber+1, newEstimation, 'l', errors, items, newCapacity, maxEst)
+
+    if maxEst is None or maxEst2 > maxEst:
+        maxEst = maxEst2
+        maxNodes = maxNodes2
+
+    # Step 4: Compare this estimation with right sub-tree and carry on
+    maxEst3, maxNodes3 = 0, []
+    if errors > 0:
+        maxEst3, maxNodes3 = explore_tree(newNode, itemNumber+1, newEstimation, 'r', errors-1, items, newCapacity, maxEst)
+
+    if maxEst is None or maxEst3 > maxEst:
+        maxEst = maxEst3
+        maxNodes = maxNodes3
+
+    return maxEst, maxNodes
+
+
+
 def solve_it(input_data):
     # Modify this code to run your optimization algorithm
 
@@ -24,65 +80,46 @@ def solve_it(input_data):
         parts = line.split()
         items.append(Item(i-1, int(parts[0]), int(parts[1])))
 
-    '''# a trivial greedy algorithm for filling the knapsack
-    # it takes items in-order until the knapsack is full
-    value = 0
-    weight = 0
-    taken = [0]*len(items)
-
+    # Branch and Bound method (Limited search)
+    # Relaxation: Assume selection of all items
+    relaxedCost = 0
     for item in items:
-        if weight + item.weight <= capacity:
-            taken[item.index] = 1
-            value += item.value
-            weight += item.weight'''
-
-    # Dynamic programming approach
-    # Space is what we have to be careful about
-    # (capacity + 1) rows and (item_count + 1) columns
-    costs = []
-    # For 0 items to be selected append a row of zeros
-    costs.append([0] * (capacity+1))
-    # now for remaining capacities
-    for i in range(item_count):
-        item = items[i]
-        itemValue = item.value
-        itemWeight = item.weight
-        # holds all costs
-        newList = []
-        # loop over all capacities (0 ... K)
-        for cap in range(capacity+1):
-            # get previous cost
-            prevCost = costs[i][cap]
-            newCost = 0 # this has to change
-            if itemWeight <= cap:
-                newCost += (itemValue + costs[i][cap-itemWeight])
-            if prevCost >= newCost:
-                newCost = prevCost
-            # update table
-            newList.append(newCost)
-        costs.append(newList)
-
-    # print the cost table
-    if debug:
-        for cost in costs:
-            print(cost)
-
-    # now prepare data to be submitted
-    value = costs[-1][-1]
-    if debug:
-        print('Optimum cost is: ' + str(value))
-
-    taken = [0] * (item_count)
-    j = -1
-    for i in range(item_count-1, -1, -1):
-        # get the costs array corresponding to this
-        if (costs[i+1][j] != costs[i][j]):
-            # this element was selected
-            taken[i] = 1
-            j -= items[i].weight
+        # Assume that this item is selected
+        relaxedCost += item.value
 
     if debug:
-        print(taken)
+        print('Relaxed value upon selecting all items: ' + str(relaxedCost))
+
+    # Now explore tree... hopefully we are looking at a pruned tree
+    # the height of the tree is the number of items = item_capacity
+
+    # provide some initial values
+    maxValue = 0    # to be updated only on leaf node(s)
+    maxTaken = []   # to be updated only on leaf node(s)
+
+    # heuristic: going left is always correct, we break heurisitc numberOfFaults times
+    numberOfFaults = 0
+    maxEstimation = None
+    maxNodes = []
+    while numberOfFaults < capacity:
+        # make different permutations here
+        maxEst2, maxNodes2 = explore_tree([0]*item_count, 0, relaxedCost, 'l', numberOfFaults, items, capacity, maxEstimation, maxNodes)
+        # Update maxEstimaiion and maxNodes
+        if maxEstimation is None or maxEst2 > maxEstimation:
+            maxEstimation = maxEst2
+            maxNodes = maxNodes2
+        # traverse right also if possible
+        if numberOfFaults > 0:
+            maxEst2, maxNodes2 = explore_tree([0]*item_count, 0, relaxedCost, 'r', numberOfFaults-1, items, capacity, maxEstimation, maxNodes)
+        # Update maxEstimation and maxNodes
+        if maxEstimation is None or maxEst2 > maxEstimation:
+            maxEstimation = maxEst2
+            maxNodes = maxNodes2
+        # Update loop variable
+        numberOfFaults += 1
+
+    value = maxEstimation
+    taken = maxNodes
 
     # prepare the solution in the specified output format
     output_data = str(value) + ' ' + str(0) + '\n'
